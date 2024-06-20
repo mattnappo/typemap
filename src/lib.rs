@@ -5,7 +5,7 @@ use std::io::Read;
 
 use anyhow::Result;
 use bimap::BiMap;
-use syn;
+use syn::*;
 
 /// A type in the analyzed codebase
 struct Ty {
@@ -15,8 +15,8 @@ struct Ty {
     /// Type ID from std::any::type_id()
     id: TypeId,
 
-    /// Type name from from the syn token.
-    name: String,
+    /// Lexical type identifier
+    ident: String,
 }
 
 /// A dependency graph of `Ty`s
@@ -45,7 +45,13 @@ impl TypeMap {
         // Find all the user-defined structs and populate `resolver`
 
         let structs = Self::structs(&file);
-        dbg!(structs);
+        dbg!(&structs);
+
+        for (type_name, s) in structs {
+            let d = Self::dependents(&s);
+            println!("{type_name} depends on:");
+            dbg!(d);
+        }
 
         // For each struct s
 
@@ -57,7 +63,7 @@ impl TypeMap {
         Ok(Self { graph, resolver })
     }
 
-    fn structs(file: &syn::File) -> Vec<syn::Ident> {
+    fn structs(file: &syn::File) -> Vec<(String, Fields)> {
         println!("AST:\n{:#?}", file);
 
         // All the structs in the file
@@ -65,9 +71,56 @@ impl TypeMap {
             .clone()
             .into_iter()
             .map(|item| match item {
-                syn::Item::Struct(s) => s.ident,
+                Item::Struct(s) => (s.ident.to_string(), s.fields),
                 _ => todo!(),
             })
-            .collect::<Vec<syn::Ident>>()
+            .collect::<Vec<(String, Fields)>>()
     }
+
+    fn dependents(s: &Fields) -> Vec<Ident> {
+        match s {
+            Fields::Unit => vec![],
+            Fields::Named(FieldsNamed { named: fields, .. }) => fields
+                .into_iter()
+                .map(|field| Self::base_types(&field.ty))
+                .flatten()
+                .collect::<Vec<Ident>>(),
+            Fields::Unnamed(FieldsUnnamed {
+                unnamed: fields, ..
+            }) => fields
+                .into_iter()
+                .map(|field| Self::base_types(&field.ty))
+                .flatten()
+                .collect::<Vec<Ident>>(),
+        }
+    }
+
+    fn base_types(ty: &Type) -> Vec<Ident> {
+        match ty {
+            Type::Path(TypePath { path, .. }) => path
+                .segments
+                .iter()
+                .map(|seg| seg.ident.clone())
+                .collect::<_>(),
+            _ => todo!(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    macro_rules! test_example {
+        ($name:ident, $path:expr) => {
+            #[test]
+            fn $name() {
+                TypeMap::build($path).unwrap();
+            }
+        };
+    }
+
+    test_example!(test_ex1, "examples/ex1.rs");
+    test_example!(test_ex2, "examples/ex2.rs");
+    test_example!(test_ex3, "examples/ex3.rs");
 }
