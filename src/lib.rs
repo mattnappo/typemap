@@ -20,38 +20,42 @@ struct Ty {
 }
 
 /// A dependency graph of `Ty`s
-#[derive(Default)]
+#[derive(Debug)]
 pub struct TypeMap {
     /// Map from a `Ty` to the `Ty`s it depends on
-    graph: HashMap<Ty, Vec<Ty>>,
+    graph: HashMap<String, Vec<String>>,
+    //graph: HashMap<Ty, Vec<Ty>>,
 
-    /// Bijective map from type names to type IDs
-    resolver: BiMap<String, TypeId>,
+    // Bijective map from type names to type IDs
+    //resolver: BiMap<String, TypeId>,
 }
 
 impl TypeMap {
     /// Build a `TypeMap` from a single file.
     /// Eventually will support multi-file projects.
     pub fn build(src: &str) -> Result<Self> {
-        let mut graph = HashMap::new();
-        let mut resolver = BiMap::new();
+        //let mut resolver = BiMap::new();
 
         // Parse the file
         let mut fd = File::open(src)?;
         let mut file = String::new();
         fd.read_to_string(&mut file)?;
         let file = syn::parse_file(&file)?;
+        //println!("AST:\n{:#?}", file);
 
-        // Find all the user-defined structs and populate `resolver`
-
-        let structs = Self::structs(&file);
-        dbg!(&structs);
-
-        for (type_name, s) in structs {
-            let d = Self::dependents(&s);
-            println!("{type_name} depends on:");
-            dbg!(d);
-        }
+        // Find all the user-defined structs and build the dependences
+        let graph = Self::user_defined_types(&file)
+            .into_iter()
+            .map(|(type_name, s)| {
+                (
+                    type_name,
+                    Self::dependents(&s)
+                        .into_iter()
+                        .map(|d| d.to_string())
+                        .collect::<Vec<String>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<String>>>();
 
         // For each struct s
 
@@ -60,39 +64,51 @@ impl TypeMap {
 
         // Update the dependents as edges in the graph where the vertex is s
 
-        Ok(Self { graph, resolver })
+        Ok(Self { graph })
     }
 
-    fn structs(file: &syn::File) -> Vec<(String, Fields)> {
-        println!("AST:\n{:#?}", file);
-
+    /// Return a list of pairs of user defined type identifier with their
+    /// fields.
+    fn user_defined_types(file: &syn::File) -> Vec<(String, Vec<Fields>)> {
         // All the structs in the file
         file.items
             .clone()
             .into_iter()
             .map(|item| match item {
-                Item::Struct(s) => (s.ident.to_string(), s.fields),
+                Item::Struct(s) => (s.ident.to_string(), vec![s.fields]),
+                Item::Enum(e) => (
+                    e.ident.to_string(),
+                    e.variants
+                        .into_iter()
+                        .map(|v| v.fields)
+                        .collect::<Vec<Fields>>(),
+                ),
+                Item::Union(u) => (u.ident.to_string(), vec![Fields::Named(u.fields)]),
                 _ => todo!(),
             })
-            .collect::<Vec<(String, Fields)>>()
+            .collect::<Vec<(String, Vec<Fields>)>>()
     }
 
-    fn dependents(s: &Fields) -> Vec<Ident> {
-        match s {
-            Fields::Unit => vec![],
-            Fields::Named(FieldsNamed { named: fields, .. }) => fields
-                .into_iter()
-                .map(|field| Self::base_types(&field.ty))
-                .flatten()
-                .collect::<Vec<Ident>>(),
-            Fields::Unnamed(FieldsUnnamed {
-                unnamed: fields, ..
-            }) => fields
-                .into_iter()
-                .map(|field| Self::base_types(&field.ty))
-                .flatten()
-                .collect::<Vec<Ident>>(),
-        }
+    fn dependents(fields: &Vec<Fields>) -> Vec<Ident> {
+        fields
+            .into_iter()
+            .map(|f| match f {
+                Fields::Unit => Vec::new(),
+                Fields::Named(FieldsNamed { named: fields, .. }) => fields
+                    .into_iter()
+                    .map(|field| Self::base_types(&field.ty))
+                    .flatten()
+                    .collect::<Vec<Ident>>(),
+                Fields::Unnamed(FieldsUnnamed {
+                    unnamed: fields, ..
+                }) => fields
+                    .into_iter()
+                    .map(|field| Self::base_types(&field.ty))
+                    .flatten()
+                    .collect::<Vec<Ident>>(),
+            })
+            .flatten()
+            .collect::<Vec<Ident>>()
     }
 
     fn base_types(ty: &Type) -> Vec<Ident> {
@@ -111,16 +127,56 @@ impl TypeMap {
 mod test {
     use super::*;
 
-    macro_rules! test_example {
+    macro_rules! run_example {
         ($name:ident, $path:expr) => {
             #[test]
             fn $name() {
-                TypeMap::build($path).unwrap();
+                dbg!(TypeMap::build($path).unwrap());
             }
         };
     }
 
-    test_example!(test_ex1, "examples/ex1.rs");
-    test_example!(test_ex2, "examples/ex2.rs");
-    test_example!(test_ex3, "examples/ex3.rs");
+    #[test]
+    fn test_ex1() {
+        let graph = TypeMap::build("examples/ex1.rs").unwrap().graph;
+        assert_eq!(graph["A"], vec!["B", "C"]);
+        assert_eq!(graph["B"], Vec::<String>::new());
+        assert_eq!(graph["C"], Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_ex2() {
+        let graph = TypeMap::build("examples/ex2.rs").unwrap().graph;
+        assert_eq!(graph["A"], vec!["B", "C"]);
+        assert_eq!(graph["B"], Vec::<String>::new());
+        assert_eq!(graph["C"], Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_ex3() {
+        let graph = TypeMap::build("examples/ex3.rs").unwrap().graph;
+        assert_eq!(graph["A"], vec!["B"]);
+        assert_eq!(graph["B"], vec!["C"]);
+        assert_eq!(graph["C"], Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_ex4() {
+        let graph = TypeMap::build("examples/ex4.rs").unwrap().graph;
+        assert_eq!(graph["A"], Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_ex5() {
+        let graph = TypeMap::build("examples/ex5.rs").unwrap().graph;
+        assert_eq!(graph["A"], vec!["B", "C"]);
+        assert_eq!(graph["B"], Vec::<String>::new());
+        assert_eq!(graph["C"], vec!["D"]);
+        assert_eq!(graph["D"], vec!["i32", "usize"]);
+    }
+
+    // run_example!(run_ex1, "examples/ex1.rs");
+    // run_example!(run_ex2, "examples/ex2.rs");
+    // run_example!(run_ex3, "examples/ex3.rs");
+    run_example!(run_ex6, "examples/ex6.rs");
 }

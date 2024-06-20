@@ -1,9 +1,9 @@
 TODO
 ====
 In order:
-- [ ] Support structs
-- [ ] Support enums
-- [ ] Support unions
+- [X] Support structs
+- [X] Support enums
+- [X] Support unions
 - [ ] Support `type` aliases
 - [ ] Support traits
 - [ ] Support generics / trait bounds
