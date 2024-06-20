@@ -1,4 +1,5 @@
 enum A {
-    B,
-    C,
+    B { b: B },
 }
+
+struct B;

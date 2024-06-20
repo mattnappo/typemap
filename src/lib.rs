@@ -47,13 +47,14 @@ impl TypeMap {
         let graph = Self::user_defined_types(&file)
             .into_iter()
             .map(|(type_name, s)| {
-                (
-                    type_name,
-                    Self::dependents(&s)
-                        .into_iter()
-                        .map(|d| d.to_string())
-                        .collect::<Vec<String>>(),
-                )
+                let field_deps = Self::field_dependents(&s)
+                    .into_iter()
+                    .map(|d| d.to_string())
+                    .collect::<Vec<String>>();
+
+                let trait_deps = Self::generic_dependents()
+
+                (type_name, deps)
             })
             .collect::<HashMap<String, Vec<String>>>();
 
@@ -61,8 +62,8 @@ impl TypeMap {
     }
 
     /// Return a list of pairs of user defined type identifier with their
-    /// fields.
-    fn user_defined_types(file: &syn::File) -> Vec<(String, Vec<Fields>)> {
+    /// fields/generics.
+    fn user_defined_types(file: &syn::File) -> Vec<(String, Vec<Fields>, Vec<Generics>)> {
         file.items
             .clone()
             .into_iter()
@@ -84,7 +85,7 @@ impl TypeMap {
     }
 
     /// Return all the type identifiers that these fields depend on
-    fn dependents(fields: &Vec<Fields>) -> Vec<Ident> {
+    fn field_dependents(fields: &Vec<Fields>) -> Vec<Ident> {
         fields
             .into_iter()
             .map(|f| match f {
@@ -106,6 +107,8 @@ impl TypeMap {
             .collect::<Vec<Ident>>()
     }
 
+    // This really should not return a vec
+    // If you had a type A::B this would return [A, B], which is wrong
     fn base_types(ty: &Type) -> Vec<Ident> {
         match ty {
             Type::Path(TypePath { path, .. }) => path
@@ -158,7 +161,8 @@ mod test {
     #[test]
     fn test_ex4() {
         let graph = TypeMap::build("examples/ex4.rs").unwrap().graph;
-        assert_eq!(graph["A"], Vec::<String>::new());
+        assert_eq!(graph["A"], vec!["B"]);
+        assert_eq!(graph["B"], Vec::<String>::new());
     }
 
     #[test]
@@ -176,8 +180,8 @@ mod test {
     fn test_ex7() {
         let graph = TypeMap::build("examples/ex7.rs").unwrap().graph;
         dbg!(&graph);
-        assert_eq!(graph["A"], vec!["T"]); // Really this should be empty
+        assert_eq!(graph["A"], Vec::<String>::new());
         assert_eq!(graph["B"], vec!["A"]);
-        assert_eq!(graph["C"], Vec::<String>::new());
+        assert_eq!(graph["C"], vec!["T"]); // Really this should be empty
     }
 }

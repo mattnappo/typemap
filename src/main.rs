@@ -16,7 +16,7 @@ struct Args {
 fn main() -> Result<()> {
     let args: Args = Args::parse();
 
-    let t = TypeMap::build(&args.file)?;
+    TypeMap::build(&args.file)?;
 
     Ok(())
 }
