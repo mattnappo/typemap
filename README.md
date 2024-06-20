@@ -1,2 +1,2 @@
 # Typemap
-Visualize dependence between user-defined types in your Rust projects.
+Visualize dependencies between user-defined types in your Rust projects.

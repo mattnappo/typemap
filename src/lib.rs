@@ -57,20 +57,12 @@ impl TypeMap {
             })
             .collect::<HashMap<String, Vec<String>>>();
 
-        // For each struct s
-
-        // Find the structs it depends on
-        // Find the enums it depends on
-
-        // Update the dependents as edges in the graph where the vertex is s
-
         Ok(Self { graph })
     }
 
     /// Return a list of pairs of user defined type identifier with their
     /// fields.
     fn user_defined_types(file: &syn::File) -> Vec<(String, Vec<Fields>)> {
-        // All the structs in the file
         file.items
             .clone()
             .into_iter()
@@ -84,11 +76,14 @@ impl TypeMap {
                         .collect::<Vec<Fields>>(),
                 ),
                 Item::Union(u) => (u.ident.to_string(), vec![Fields::Named(u.fields)]),
+                Item::Type(t) => (t.ident.to_string(), vec![]),
+                Item::Trait(t) => (t.ident.to_string(), vec![]),
                 _ => todo!(),
             })
             .collect::<Vec<(String, Vec<Fields>)>>()
     }
 
+    /// Return all the type identifiers that these fields depend on
     fn dependents(fields: &Vec<Fields>) -> Vec<Ident> {
         fields
             .into_iter()
@@ -175,8 +170,14 @@ mod test {
         assert_eq!(graph["D"], vec!["i32", "usize"]);
     }
 
-    // run_example!(run_ex1, "examples/ex1.rs");
-    // run_example!(run_ex2, "examples/ex2.rs");
-    // run_example!(run_ex3, "examples/ex3.rs");
     run_example!(run_ex6, "examples/ex6.rs");
+
+    #[test]
+    fn test_ex7() {
+        let graph = TypeMap::build("examples/ex7.rs").unwrap().graph;
+        dbg!(&graph);
+        assert_eq!(graph["A"], vec!["T"]); // Really this should be empty
+        assert_eq!(graph["B"], vec!["A"]);
+        assert_eq!(graph["C"], Vec::<String>::new());
+    }
 }
