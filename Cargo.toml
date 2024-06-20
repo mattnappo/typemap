@@ -1,0 +1,10 @@
+[package]
+name = "typemap"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+syn = { version = "2.0", features = ["full", "extra-traits"] }
+bimap = "0.6.3"
+anyhow = "1.0.86"
+clap = { version = "4.5.7", features = ["derive"] }
