@@ -115,6 +115,7 @@ impl TypeMap {
                 ),
                 Item::Type(t) => (t.ident.to_string(), vec![], vec![]),
                 Item::Trait(t) => (t.ident.to_string(), vec![], vec![]),
+                // Item::Mod(m) => Self::user_defined_types(...)
                 _ => todo!(),
             })
             .collect::<Vec<(String, Vec<Fields>, Vec<Generics>)>>()
@@ -309,5 +310,19 @@ mod test {
         edge! {graph, A ->   };
         redge! {graph, B -> tr!(A) };
         edge! {graph, C -> };
+    }
+
+    #[test]
+    fn test_ex8() {
+        let graph = TypeMap::build("examples/ex8.rs").unwrap().graph;
+        edge! {graph, A ->   };
+        redge! {graph, B -> tr!(A) };
+        edge! {graph, C -> };
+    }
+
+    #[test]
+    fn test_ex9() {
+        let graph = TypeMap::build("examples/ex9.rs").unwrap().graph;
+        dbg!(&graph);
     }
 }
