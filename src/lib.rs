@@ -114,8 +114,9 @@ impl TypeMap {
                     vec![Fields::Named(u.fields)],
                     vec![u.generics],
                 ),
-                Item::Type(t) => (t.ident.to_string(), vec![], vec![]),
-                Item::Trait(t) => (t.ident.to_string(), vec![], vec![]),
+                // TODO: Also need to add supertrait support
+                Item::Type(t) => (t.ident.to_string(), vec![], vec![t.generics]),
+                Item::Trait(t) => (t.ident.to_string(), vec![], vec![t.generics]),
                 // Item::Mod(m) => Self::user_defined_types(...)
                 _ => todo!(),
             })
@@ -341,8 +342,11 @@ mod test {
     #[test]
     fn test_ex06() {
         let graph = TypeMap::build("examples/ex06.rs").unwrap().graph;
+        dbg!(&graph);
         edge! {graph, A ->   };
         edge! {graph, B -> A };
+        redge! {graph, C -> tr!(D) };
+        redge! {graph, D -> tr!(E), tr!(F), tr!(G) };
     }
 
     #[test]
@@ -382,6 +386,6 @@ mod test {
                             fi!(D), fi!(E), fi!(usize),
                             fi!(isize), fi!(bool), fi!(f64),
                             fi!(F), fi!(G), Dependence::Field("std::collections::HashMap".into()), fi!(H), 
-                            fi!(X), fi!(Y) }; // TODO: these should be tr!
+                            fi!(X), fi!(Y) }; // TODO: X and Y should be tr!
     }
 }
