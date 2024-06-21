@@ -8,11 +8,11 @@ In order:
 - [-] Support `type` aliases
     - [ ] Need to make it so that in `type X = String`, X depends on String.
           This will require modification of the `Type` branch in `user_defined_types`
-- [ ] Support traits
-    - [ ] Want some sort of enum to distinguish between struct/enum/primitive/trait dependence
-    - [ ] Extra trait dependences (same as type aliases)
-- [ ] Support generics / trait bounds
-    - [ ] Tricky since generics introduce scope. Two A's in diff structs are not the same A
+- [X] Support traits
+    - [X] Want some sort of enum to distinguish between struct/enum/primitive/trait dependence
+    - [N] Extra trait dependences (same as type aliases)
+- [X] Support generics / trait bounds
+    - [-] Tricky since generics introduce scope. Two A's in diff structs are not the same A
 - [ ] Remove self-loops in example 7
 - [ ] Add flag for showing builtin/primitive types (ex: Box/u8)
 - [ ] Support multi-file projects
