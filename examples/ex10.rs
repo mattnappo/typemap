@@ -1,0 +1,1 @@
+struct A(Box<A>);

@@ -32,9 +32,10 @@ pub struct TypeMap {
     //resolver: BiMap<String, TypeId>,
 }
 
+// TODO: would be nice to have extra annotations within "Field/Type" (like struct/enum/fn)
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
 enum Dependence {
-    Field(String),
+    Field(String), // TODO Really should be called "Type"
     Trait(String),
 }
 
@@ -57,16 +58,16 @@ impl TypeMap {
             .map(|(type_name, s, g)| {
                 let field_deps = Set::from_iter(
                     Self::field_dependents(&s)
-                        .into_iter()
-                        .map(|d| Dependence::Field(d))
-                        .collect::<Vec<Dependence>>(),
+                        // .into_iter()
+                        // .map(|d| Dependence::Field(d))
+                        // .collect::<Vec<Dependence>>(),
                 );
 
                 let generic_deps = Set::from_iter(
                     Self::generic_dependents(&g)
-                        .into_iter()
-                        .map(|d| Dependence::Trait(d))
-                        .collect::<Vec<Dependence>>(),
+                        // .into_iter()
+                        // .map(|d| Dependence::Trait(d))
+                        // .collect::<Vec<Dependence>>(),
                 );
 
                 let generic_names = Set::from_iter(
@@ -123,7 +124,7 @@ impl TypeMap {
 
     /// Return all the type identifiers that these fields depend on
     // TODO: move the `Dependence` wrapper type in here
-    fn field_dependents(fields: &Vec<Fields>) -> Vec<String> {
+    fn field_dependents(fields: &Vec<Fields>) -> Vec<Dependence> {
         fields
             .into_iter()
             .map(|f| match f {
@@ -132,21 +133,23 @@ impl TypeMap {
                     .into_iter()
                     .map(|field| Self::base_types(&field.ty))
                     .flatten()
-                    .collect::<Vec<String>>(),
+                    .map(|f| Dependence::Field(f))
+                    .collect::<Vec<Dependence>>(),
                 Fields::Unnamed(FieldsUnnamed {
                     unnamed: fields, ..
                 }) => fields
                     .into_iter()
                     .map(|field| Self::base_types(&field.ty))
                     .flatten()
-                    .collect::<Vec<String>>(),
+                    .map(|f| Dependence::Field(f))
+                    .collect::<Vec<Dependence>>(),
             })
             .flatten()
-            .collect::<Vec<String>>()
+            .collect::<Vec<Dependence>>()
     }
 
     /// Get the trait bounds on any generic parameters, which form a (trait) dependence.
-    fn generic_dependents(generics: &Vec<Generics>) -> Vec<String> {
+    fn generic_dependents(generics: &Vec<Generics>) -> Vec<Dependence> {
         generics
             .into_iter()
             .map(|g| {
@@ -164,18 +167,19 @@ impl TypeMap {
                                     }
                                     _ => todo!(),
                                 })
-                                .collect::<Vec<String>>(),
+                                .map(|b| Dependence::Trait(b))
+                                .collect::<Vec<Dependence>>(),
                             GenericParam::Lifetime(_) => {
-                                todo!("lifetime parameters not yet supported")
+                                vec![]
                             }
                             GenericParam::Const(_) => todo!("const generics not yet supported"),
                         })
                         .flatten()
-                        .collect::<Vec<String>>()
+                        .collect::<Vec<Dependence>>()
                 }
             })
             .flatten()
-            .collect::<Vec<String>>()
+            .collect::<Vec<Dependence>>()
     }
 
     /// The generic parameter names (without type bounds)
@@ -189,9 +193,7 @@ impl TypeMap {
                         .into_iter()
                         .map(|param| match param {
                             GenericParam::Type(t) => t.ident.to_string(),
-                            GenericParam::Lifetime(_) => {
-                                todo!("lifetime parameters not yet supported")
-                            }
+                            GenericParam::Lifetime(_) => "".into(),
                             GenericParam::Const(_) => todo!("const generics not yet supported"),
                         })
                         .collect::<Vec<String>>()
@@ -205,15 +207,48 @@ impl TypeMap {
         path.segments
             .iter()
             .map(|seg| seg.ident.to_string())
-            .collect::<_>()
+            .collect::<Vec<String>>()
+            .join("::")
     }
 
     // This really should not return a vec
     // If you had a type A::B this would return [A, B], which is wrong
+    // TODO: change to HashSet
     fn base_types(ty: &Type) -> Vec<String> {
         match ty {
             Type::Path(TypePath { path, .. }) => vec![Self::type_from_path(path)],
-            _ => todo!(),
+            Type::Array(TypeArray { elem, .. }) => Self::base_types(elem),
+            Type::BareFn(TypeBareFn { inputs, output, .. }) => {
+                let mut tys = vec![];
+                let input_tys = inputs
+                    .into_iter()
+                    .map(|i| Self::base_types(&i.ty))
+                    .flatten()
+                    .collect::<Vec<String>>();
+                if let ReturnType::Type(_, ty) = output {
+                    tys.extend(Self::base_types(ty))
+                }
+                tys.extend(input_tys);
+                tys
+            }
+            Type::Tuple(TypeTuple { elems, .. }) => elems
+                .into_iter()
+                .map(|i| Self::base_types(i))
+                .flatten()
+                .collect::<Vec<String>>(),
+            Type::Slice(TypeSlice {elem, ..}) => Self::base_types(elem),
+            Type::ImplTrait(TypeImplTrait { bounds  , .. }) => {
+                // TODO: these need to be marked not as fields, but as Dependence::Traits
+                bounds.into_iter().map(|b| {
+                    match b {
+                        TypeParamBound::Trait(t) => Self::type_from_path(&t.path),
+                        _ => "".into()
+                    }
+
+                }).collect::<Vec<String>>()
+            }
+            Type::Reference(TypeReference {elem, ..}) => Self::base_types(elem),
+            _ => vec![],
         }
     }
 }
@@ -263,66 +298,90 @@ mod test {
     }
 
     #[test]
-    fn test_ex1() {
-        let graph = TypeMap::build("examples/ex1.rs").unwrap().graph;
+    fn test_ex01() {
+        let graph = TypeMap::build("examples/ex01.rs").unwrap().graph;
         edge! {graph, A -> B, C};
         edge! {graph, B -> };
         edge! {graph, C -> };
     }
 
     #[test]
-    fn test_ex2() {
-        let graph = TypeMap::build("examples/ex2.rs").unwrap().graph;
+    fn test_ex02() {
+        let graph = TypeMap::build("examples/ex02.rs").unwrap().graph;
         edge! {graph, A -> B, C};
         edge! {graph, B -> };
         edge! {graph, C -> };
     }
 
     #[test]
-    fn test_ex3() {
-        let graph = TypeMap::build("examples/ex3.rs").unwrap().graph;
+    fn test_ex03() {
+        let graph = TypeMap::build("examples/ex03.rs").unwrap().graph;
         edge! {graph, A -> B };
         edge! {graph, B -> C };
         edge! {graph, C ->   };
     }
 
     #[test]
-    fn test_ex4() {
-        let graph = TypeMap::build("examples/ex4.rs").unwrap().graph;
+    fn test_ex04() {
+        let graph = TypeMap::build("examples/ex04.rs").unwrap().graph;
         edge! {graph, A -> B };
         edge! {graph, B ->   };
     }
 
     #[test]
-    fn test_ex5() {
-        let graph = TypeMap::build("examples/ex5.rs").unwrap().graph;
+    fn test_ex05() {
+        let graph = TypeMap::build("examples/ex05.rs").unwrap().graph;
         edge! {graph, A -> B, C };
         edge! {graph, B ->      };
         edge! {graph, C -> D    };
         edge! {graph, D -> i32, usize };
     }
 
-    run_example!(run_ex6, "examples/ex6.rs");
+    // This test is not perfect yet, as `type` aliases don't have deps
+    #[test]
+    fn test_ex06() {
+        let graph = TypeMap::build("examples/ex06.rs").unwrap().graph;
+        edge! {graph, A ->   };
+        edge! {graph, B -> A };
+    }
 
     #[test]
-    fn test_ex7() {
-        let graph = TypeMap::build("examples/ex7.rs").unwrap().graph;
+    fn test_ex07() {
+        let graph = TypeMap::build("examples/ex07.rs").unwrap().graph;
         edge! {graph, A ->   };
         redge! {graph, B -> tr!(A) };
         edge! {graph, C -> };
     }
 
     #[test]
-    fn test_ex8() {
-        let graph = TypeMap::build("examples/ex8.rs").unwrap().graph;
-        edge! {graph, A ->   };
-        redge! {graph, B -> tr!(A) };
-        edge! {graph, C -> };
+    fn test_ex08() {
+        let graph = TypeMap::build("examples/ex08.rs").unwrap().graph;
+        redge! {graph,  A -> tr!(C) };
+        redge! {graph, B -> tr!(C) };
+        edge! {graph,  C -> };
     }
 
     #[test]
-    fn test_ex9() {
-        let graph = TypeMap::build("examples/ex9.rs").unwrap().graph;
+    fn test_ex09() {
+        let graph = TypeMap::build("examples/ex09.rs").unwrap().graph;
         dbg!(&graph);
+    }
+
+    #[test]
+    fn test_ex10() {
+        let graph = TypeMap::build("examples/ex10.rs").unwrap().graph;
+        dbg!(&graph);
+        edge! {graph, A -> A}
+    }
+
+    #[test]
+    fn test_ex11() {
+        let graph = TypeMap::build("examples/ex11.rs").unwrap().graph;
+        dbg!(&graph);
+        redge! {graph, A -> fi!(B), fi!(C), fi!(D),
+                            fi!(D), fi!(E), fi!(usize),
+                            fi!(isize), fi!(bool), fi!(f64),
+                            fi!(F), fi!(G), Dependence::Field("std::collections::HashMap".into()), fi!(H), 
+                            fi!(X), fi!(Y) }; // TODO: these should be tr!
     }
 }
