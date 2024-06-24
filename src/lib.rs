@@ -7,7 +7,11 @@ use anyhow::Result;
 use bimap::BiMap;
 use syn::*;
 
-type Set<T> = HashSet<T>;
+mod dot;
+
+pub type Set<T> = HashSet<T>;
+
+pub type DepGraph = HashMap<String, Set<Dependence>>;
 
 /// A type in the analyzed codebase
 struct Ty {
@@ -25,7 +29,7 @@ struct Ty {
 #[derive(Debug)]
 pub struct TypeMap {
     /// Map from a `Ty` to the `Ty`s it depends on
-    graph: HashMap<String, Set<Dependence>>,
+    graph: DepGraph,
     //graph: HashMap<Ty, Vec<Ty>>,
 
     // Bijective map from type names to type IDs
@@ -34,9 +38,18 @@ pub struct TypeMap {
 
 // TODO: would be nice to have extra annotations within "Field/Type" (like struct/enum/fn)
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
-enum Dependence {
+pub enum Dependence {
     Field(String), // TODO Really should be called "Type"
     Trait(String),
+}
+
+impl ToString for Dependence {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Field(s) => s.into(),
+            Self::Trait(s) => s.into(),
+        }
+    }
 }
 
 impl TypeMap {
@@ -57,17 +70,15 @@ impl TypeMap {
             .into_iter()
             .map(|(type_name, s, g)| {
                 let field_deps = Set::from_iter(
-                    Self::field_dependents(&s)
-                        // .into_iter()
-                        // .map(|d| Dependence::Field(d))
-                        // .collect::<Vec<Dependence>>(),
+                    Self::field_dependents(&s), // .into_iter()
+                                                // .map(|d| Dependence::Field(d))
+                                                // .collect::<Vec<Dependence>>(),
                 );
 
                 let generic_deps = Set::from_iter(
-                    Self::generic_dependents(&g)
-                        // .into_iter()
-                        // .map(|d| Dependence::Trait(d))
-                        // .collect::<Vec<Dependence>>(),
+                    Self::generic_dependents(&g), // .into_iter()
+                                                  // .map(|d| Dependence::Trait(d))
+                                                  // .collect::<Vec<Dependence>>(),
                 );
 
                 let generic_names = Set::from_iter(
@@ -88,9 +99,13 @@ impl TypeMap {
 
                 (type_name, deps)
             })
-            .collect::<HashMap<String, Set<Dependence>>>();
+            .collect::<DepGraph>();
 
         Ok(Self { graph })
+    }
+
+    pub fn graph(&self) -> &DepGraph {
+        &self.graph
     }
 
     /// Return a list of pairs of user defined type identifier with their
@@ -237,18 +252,18 @@ impl TypeMap {
                 .map(|i| Self::base_types(i))
                 .flatten()
                 .collect::<Vec<String>>(),
-            Type::Slice(TypeSlice {elem, ..}) => Self::base_types(elem),
-            Type::ImplTrait(TypeImplTrait { bounds  , .. }) => {
+            Type::Slice(TypeSlice { elem, .. }) => Self::base_types(elem),
+            Type::ImplTrait(TypeImplTrait { bounds, .. }) => {
                 // TODO: these need to be marked not as fields, but as Dependence::Traits
-                bounds.into_iter().map(|b| {
-                    match b {
+                bounds
+                    .into_iter()
+                    .map(|b| match b {
                         TypeParamBound::Trait(t) => Self::type_from_path(&t.path),
-                        _ => "".into()
-                    }
-
-                }).collect::<Vec<String>>()
+                        _ => "".into(),
+                    })
+                    .collect::<Vec<String>>()
             }
-            Type::Reference(TypeReference {elem, ..}) => Self::base_types(elem),
+            Type::Reference(TypeReference { elem, .. }) => Self::base_types(elem),
             _ => vec![],
         }
     }
@@ -383,9 +398,9 @@ mod test {
         let graph = TypeMap::build("examples/ex11.rs").unwrap().graph;
         dbg!(&graph);
         redge! {graph, A -> fi!(B), fi!(C), fi!(D),
-                            fi!(D), fi!(E), fi!(usize),
-                            fi!(isize), fi!(bool), fi!(f64),
-                            fi!(F), fi!(G), Dependence::Field("std::collections::HashMap".into()), fi!(H), 
-                            fi!(X), fi!(Y) }; // TODO: X and Y should be tr!
+        fi!(D), fi!(E), fi!(usize),
+        fi!(isize), fi!(bool), fi!(f64),
+        fi!(F), fi!(G), Dependence::Field("std::collections::HashMap".into()), fi!(H),
+        fi!(X), fi!(Y) }; // TODO: X and Y should be tr!
     }
 }
