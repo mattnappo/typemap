@@ -9,8 +9,10 @@ use typemap::TypeMap;
     version = "0.1"
 )]
 struct Args {
+    /// Rust file to analyze.
     #[clap(short, long)]
     infile: String,
+    /// PDF file to output to. If none, will print dot to stdout.
     #[clap(short, long)]
     outfile: Option<String>,
 }

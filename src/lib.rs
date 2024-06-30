@@ -62,7 +62,7 @@ impl TypeMap {
         let mut file = String::new();
         fd.read_to_string(&mut file)?;
         let file = syn::parse_file(&file)?;
-        //println!("AST:\n{:#?}", file);
+        // println!("AST:\n{:#?}", file);
 
         // Find all the user-defined structs and build the dependences
         let graph = Self::user_defined_types(&file)
@@ -173,16 +173,21 @@ impl TypeMap {
                         .clone()
                         .into_iter()
                         .map(|param| match param {
+                            // TODO: a bug here is that generics can depend on more than just
+                            // traits
                             GenericParam::Type(t) => t
                                 .bounds
                                 .into_iter()
                                 .map(|bound| match bound {
                                     TypeParamBound::Trait(TraitBound { path, .. }) => {
-                                        Self::type_from_path(&path)
+                                        Self::types_from_path(&path)
+                                            .into_iter()
+                                            .map(|d| Dependence::Trait(d))
+                                            .collect::<Vec<Dependence>>()
                                     }
                                     _ => todo!(),
                                 })
-                                .map(|b| Dependence::Trait(b))
+                                .flatten()
                                 .collect::<Vec<Dependence>>(),
                             GenericParam::Lifetime(_) => {
                                 vec![]
@@ -218,20 +223,44 @@ impl TypeMap {
             .collect::<Vec<String>>()
     }
 
-    fn type_from_path(path: &Path) -> String {
-        path.segments
+    fn types_from_path(path: &Path) -> Vec<String> {
+        let base = path
+            .segments
             .iter()
             .map(|seg| seg.ident.to_string())
             .collect::<Vec<String>>()
-            .join("::")
+            .join("::");
+        let mut args = path
+            .segments
+            .iter()
+            .map(|seg| match &seg.arguments {
+                PathArguments::None => vec![],
+                PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) => {
+                    args.into_iter()
+                        .map(|arg| match arg {
+                            // GenericArgument::Lifetime(_) => todo!(),
+                            GenericArgument::Type(ty) => Self::base_types(&ty),
+                            // GenericArgument::Const(_) => todo!(),
+                            GenericArgument::AssocType(_) => todo!(),
+                            // GenericArgument::AssocConst(_) => todo!(),
+                            GenericArgument::Constraint(_) => todo!(),
+                            _ => vec![], // TODO: handle these
+                        })
+                        .collect::<Vec<Vec<String>>>()
+                }
+                PathArguments::Parenthesized(_) => todo!(),
+            })
+            .flatten()
+            .flatten()
+            .collect::<Vec<String>>();
+        args.push(base);
+        args
     }
 
-    // This really should not return a vec
-    // If you had a type A::B this would return [A, B], which is wrong
     // TODO: change to HashSet
     fn base_types(ty: &Type) -> Vec<String> {
         match ty {
-            Type::Path(TypePath { path, .. }) => vec![Self::type_from_path(path)],
+            Type::Path(TypePath { path, .. }) => Self::types_from_path(path),
             Type::Array(TypeArray { elem, .. }) => Self::base_types(elem),
             Type::BareFn(TypeBareFn { inputs, output, .. }) => {
                 let mut tys = vec![];
@@ -257,9 +286,10 @@ impl TypeMap {
                 bounds
                     .into_iter()
                     .map(|b| match b {
-                        TypeParamBound::Trait(t) => Self::type_from_path(&t.path),
-                        _ => "".into(),
+                        TypeParamBound::Trait(t) => Self::types_from_path(&t.path),
+                        _ => vec![],
                     })
+                    .flatten()
                     .collect::<Vec<String>>()
             }
             Type::Reference(TypeReference { elem, .. }) => Self::base_types(elem),
@@ -389,7 +419,7 @@ mod test {
     fn test_ex10() {
         let graph = TypeMap::build("examples/ex10.rs").unwrap().graph;
         dbg!(&graph);
-        edge! {graph, A -> A}
+        edge! {graph, A -> A, Box}
     }
 
     #[test]
@@ -401,5 +431,13 @@ mod test {
         fi!(isize), fi!(bool), fi!(f64),
         fi!(F), fi!(G), Dependence::Field("std::collections::HashMap".into()), fi!(H),
         fi!(X), fi!(Y) }; // TODO: X and Y should be tr!
+    }
+
+    #[test]
+    fn test_ex12() {
+        let graph = TypeMap::build("examples/ex12.rs").unwrap().graph;
+        dbg!(&graph);
+        edge! {graph, A -> i32 };
+        edge! {graph, B -> A, i32 };
     }
 }
