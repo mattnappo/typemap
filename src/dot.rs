@@ -11,6 +11,7 @@ pub fn generate_dot(graph: &DepGraph, outfile: Option<&str>) -> String {
         .map(|(_i, n)| {
             Stmt::Node(Node::new(
                 NodeId(Id::Plain(n.to_string()), None),
+                // color attrib:     node1 [label=<<font color="red">Trait </font>Epic>]
                 vec![Attribute(
                     Id::Plain("shape".into()),
                     Id::Plain("square".into()),
