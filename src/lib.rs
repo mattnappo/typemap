@@ -4,10 +4,9 @@ use std::fs::File;
 use std::io::Read;
 
 use anyhow::Result;
-use bimap::BiMap;
 use syn::*;
 
-mod dot;
+pub mod dot;
 
 pub type Set<T> = HashSet<T>;
 
