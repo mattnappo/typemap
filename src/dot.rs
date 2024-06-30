@@ -1,26 +1,31 @@
-use super::DepGraph;
+use super::TypeMap;
 use graphviz_rust::dot_structures::*;
 use graphviz_rust::printer::PrinterContext;
 use graphviz_rust::{cmd, exec};
 
-pub fn generate_dot(graph: &DepGraph, outfile: Option<&str>) -> String {
+pub fn generate_dot(typemap: &TypeMap, outfile: Option<&str>) -> String {
     // Build nodes
-    let mut nodes = graph
+    let mut nodes = typemap
+        .graph()
         .keys()
         .enumerate()
         .map(|(_i, n)| {
             Stmt::Node(Node::new(
                 NodeId(Id::Plain(n.to_string()), None),
-                vec![Attribute(
-                    Id::Plain("shape".into()),
-                    Id::Plain("square".into()),
-                )],
+                vec![
+                    Attribute(Id::Plain("shape".into()), Id::Plain("square".into())),
+                    Attribute(
+                        Id::Plain("label".into()),
+                        Id::Plain(format!("{} {}", n.name(), n.dep_type())),
+                    ),
+                ],
             ))
         })
         .collect::<Vec<Stmt>>();
 
     // Build edges
-    let edges = graph
+    let edges = typemap
+        .graph()
         .into_iter()
         .map(|(src, dests)| {
             dests
@@ -72,7 +77,9 @@ mod test {
     #[test]
     fn test_gen() {
         let tm = TypeMap::build("examples/ex06.rs").unwrap();
-        generate_dot(tm.graph(), Some("tmp/test.pdf"));
+        //let dot = generate_dot(&tm, Some("tmp/test.pdf"));
+        let dot = generate_dot(&tm, None);
+        dbg!(&dot);
     }
 
     //#[test]

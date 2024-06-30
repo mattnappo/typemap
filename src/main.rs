@@ -20,8 +20,8 @@ struct Args {
 fn main() -> Result<()> {
     let args: Args = Args::parse();
 
-    let graph = TypeMap::build(&args.infile)?;
-    let dot = generate_dot(graph.graph(), args.outfile.as_deref());
+    let typemap = TypeMap::build(&args.infile)?;
+    let dot = generate_dot(&typemap, args.outfile.as_deref());
     if let None = args.outfile {
         println!("{dot}");
     }

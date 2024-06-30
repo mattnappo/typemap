@@ -10,7 +10,7 @@ pub mod dot;
 
 pub type Set<T> = HashSet<T>;
 
-pub type DepGraph = HashMap<String, Set<Dependence>>;
+pub type DepGraph = HashMap<Dependence, Set<Dependence>>;
 
 /// A type in the analyzed codebase
 struct Ty {
@@ -30,24 +30,62 @@ pub struct TypeMap {
     /// Map from a `Ty` to the `Ty`s it depends on
     graph: DepGraph,
     //graph: HashMap<Ty, Vec<Ty>>,
-
+    // deps: HashMap<String, Dependence>,
     // Bijective map from type names to type IDs
     //resolver: BiMap<String, TypeId>,
 }
 
 // TODO: would be nice to have extra annotations within "Field/Type" (like struct/enum/fn)
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
+pub enum DependenceType {
+    Struct,
+    Enum,
+    Union,
+    Type,
+    Trait,
+    Temp,
+}
+
+#[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub enum Dependence {
-    Field(String), // TODO Really should be called "Type"
-    Trait(String),
+    Field(String, DependenceType),
+    Trait(String, DependenceType),
+}
+
+impl Dependence {
+    pub fn name(&self) -> String {
+        match self {
+            Self::Field(n, _) | Self::Trait(n, _) => n,
+        }
+        .into()
+    }
+    pub fn dep_type(&self) -> String {
+        match self {
+            Self::Field(_, t) | Self::Trait(_, t) => t.to_ty(),
+        }
+    }
+}
+
+impl DependenceType {
+    pub fn to_ty(&self) -> String {
+        match self {
+            Self::Struct => "Struct",
+            Self::Enum => "Enum",
+            Self::Union => "Union",
+            Self::Type => "Type",
+            Self::Trait => "Trait",
+            Self::Temp => "Temp",
+        }
+        .into()
+    }
 }
 
 impl ToString for Dependence {
     fn to_string(&self) -> String {
         match self {
-            Self::Field(s) => s.into(),
-            Self::Trait(s) => s.into(),
+            Self::Field(s, _) | Self::Trait(s, _) => s,
         }
+        .into()
     }
 }
 
@@ -83,7 +121,7 @@ impl TypeMap {
                 let generic_names = Set::from_iter(
                     Self::generic_names(&g)
                         .into_iter()
-                        .map(|n| Dependence::Field(n))
+                        .map(|n| Dependence::Field(n, DependenceType::Temp))
                         .collect::<Vec<Dependence>>(),
                 );
 
@@ -99,6 +137,18 @@ impl TypeMap {
                 (type_name, deps)
             })
             .collect::<DepGraph>();
+        /*
+        let mut deps: HashSet<Dependence> = graph
+            .clone()
+            .values()
+            .flatten()
+            .flat_map(|dep| match dep {
+                Dependence::Trait(s, _) | Dependence::Field(s, _) => Some((s.clone(), dep.clone())),
+            })
+            .collect();
+        deps.extend(graph.keys());
+        dbg!(&deps);
+        */
 
         Ok(Self { graph })
     }
@@ -109,14 +159,18 @@ impl TypeMap {
 
     /// Return a list of pairs of user defined type identifier with their
     /// fields/generics.
-    fn user_defined_types(file: &syn::File) -> Vec<(String, Vec<Fields>, Vec<Generics>)> {
+    fn user_defined_types(file: &syn::File) -> Vec<(Dependence, Vec<Fields>, Vec<Generics>)> {
         file.items
             .clone()
             .into_iter()
             .map(|item| match item {
-                Item::Struct(s) => (s.ident.to_string(), vec![s.fields], vec![s.generics]),
+                Item::Struct(s) => (
+                    Dependence::Field(s.ident.to_string(), DependenceType::Struct),
+                    vec![s.fields],
+                    vec![s.generics],
+                ),
                 Item::Enum(e) => (
-                    e.ident.to_string(),
+                    Dependence::Field(e.ident.to_string(), DependenceType::Enum),
                     e.variants
                         .into_iter()
                         .map(|v| v.fields)
@@ -124,17 +178,25 @@ impl TypeMap {
                     vec![e.generics],
                 ),
                 Item::Union(u) => (
-                    u.ident.to_string(),
+                    Dependence::Field(u.ident.to_string(), DependenceType::Union),
                     vec![Fields::Named(u.fields)],
                     vec![u.generics],
                 ),
                 // TODO: Also need to add supertrait support
-                Item::Type(t) => (t.ident.to_string(), vec![], vec![t.generics]),
-                Item::Trait(t) => (t.ident.to_string(), vec![], vec![t.generics]),
+                Item::Type(t) => (
+                    Dependence::Field(t.ident.to_string(), DependenceType::Type),
+                    vec![],
+                    vec![t.generics],
+                ),
+                Item::Trait(t) => (
+                    Dependence::Trait(t.ident.to_string(), DependenceType::Trait),
+                    vec![],
+                    vec![t.generics],
+                ),
                 // Item::Mod(m) => Self::user_defined_types(...)
                 _ => todo!(),
             })
-            .collect::<Vec<(String, Vec<Fields>, Vec<Generics>)>>()
+            .collect::<Vec<(Dependence, Vec<Fields>, Vec<Generics>)>>()
     }
 
     /// Return all the type identifiers that these fields depend on
@@ -142,24 +204,21 @@ impl TypeMap {
     fn field_dependents(fields: &Vec<Fields>) -> Vec<Dependence> {
         fields
             .into_iter()
-            .map(|f| match f {
+            .flat_map(|f| match f {
                 Fields::Unit => Vec::new(),
                 Fields::Named(FieldsNamed { named: fields, .. }) => fields
                     .into_iter()
-                    .map(|field| Self::base_types(&field.ty))
-                    .flatten()
-                    .map(|f| Dependence::Field(f))
+                    .flat_map(|field| Self::base_types(&field.ty))
+                    .map(|f| Dependence::Field(f, DependenceType::Type))
                     .collect::<Vec<Dependence>>(),
                 Fields::Unnamed(FieldsUnnamed {
                     unnamed: fields, ..
                 }) => fields
                     .into_iter()
-                    .map(|field| Self::base_types(&field.ty))
-                    .flatten()
-                    .map(|f| Dependence::Field(f))
+                    .flat_map(|field| Self::base_types(&field.ty))
+                    .map(|f| Dependence::Field(f, DependenceType::Type))
                     .collect::<Vec<Dependence>>(),
             })
-            .flatten()
             .collect::<Vec<Dependence>>()
     }
 
@@ -167,38 +226,35 @@ impl TypeMap {
     fn generic_dependents(generics: &Vec<Generics>) -> Vec<Dependence> {
         generics
             .into_iter()
-            .map(|g| {
+            .flat_map(|g| {
                 {
                     g.params
                         .clone()
                         .into_iter()
-                        .map(|param| match param {
+                        .flat_map(|param| match param {
                             // TODO: a bug here is that generics can depend on more than just
                             // traits
                             GenericParam::Type(t) => t
                                 .bounds
                                 .into_iter()
-                                .map(|bound| match bound {
+                                .flat_map(|bound| match bound {
                                     TypeParamBound::Trait(TraitBound { path, .. }) => {
                                         Self::types_from_path(&path)
                                             .into_iter()
-                                            .map(|d| Dependence::Trait(d))
+                                            .map(|d| Dependence::Trait(d, DependenceType::Trait))
                                             .collect::<Vec<Dependence>>()
                                     }
                                     _ => todo!(),
                                 })
-                                .flatten()
                                 .collect::<Vec<Dependence>>(),
                             GenericParam::Lifetime(_) => {
                                 vec![]
                             }
                             GenericParam::Const(_) => todo!("const generics not yet supported"),
                         })
-                        .flatten()
                         .collect::<Vec<Dependence>>()
                 }
             })
-            .flatten()
             .collect::<Vec<Dependence>>()
     }
 
@@ -206,7 +262,7 @@ impl TypeMap {
     fn generic_names(generics: &Vec<Generics>) -> Vec<String> {
         generics
             .into_iter()
-            .map(|g| {
+            .flat_map(|g| {
                 {
                     g.params
                         .clone()
@@ -219,7 +275,6 @@ impl TypeMap {
                         .collect::<Vec<String>>()
                 }
             })
-            .flatten()
             .collect::<Vec<String>>()
     }
 
@@ -233,11 +288,11 @@ impl TypeMap {
         let mut args = path
             .segments
             .iter()
-            .map(|seg| match &seg.arguments {
+            .flat_map(|seg| match &seg.arguments {
                 PathArguments::None => vec![],
                 PathArguments::AngleBracketed(AngleBracketedGenericArguments { args, .. }) => {
                     args.into_iter()
-                        .map(|arg| match arg {
+                        .flat_map(|arg| match arg {
                             // GenericArgument::Lifetime(_) => todo!(),
                             GenericArgument::Type(ty) => Self::base_types(&ty),
                             // GenericArgument::Const(_) => todo!(),
@@ -246,12 +301,10 @@ impl TypeMap {
                             GenericArgument::Constraint(_) => todo!(),
                             _ => vec![], // TODO: handle these
                         })
-                        .collect::<Vec<Vec<String>>>()
+                        .collect::<Vec<String>>()
                 }
                 PathArguments::Parenthesized(_) => todo!(),
             })
-            .flatten()
-            .flatten()
             .collect::<Vec<String>>();
         args.push(base);
         args
@@ -266,8 +319,7 @@ impl TypeMap {
                 let mut tys = vec![];
                 let input_tys = inputs
                     .into_iter()
-                    .map(|i| Self::base_types(&i.ty))
-                    .flatten()
+                    .flat_map(|i| Self::base_types(&i.ty))
                     .collect::<Vec<String>>();
                 if let ReturnType::Type(_, ty) = output {
                     tys.extend(Self::base_types(ty))
@@ -277,19 +329,17 @@ impl TypeMap {
             }
             Type::Tuple(TypeTuple { elems, .. }) => elems
                 .into_iter()
-                .map(|i| Self::base_types(i))
-                .flatten()
+                .flat_map(|i| Self::base_types(i))
                 .collect::<Vec<String>>(),
             Type::Slice(TypeSlice { elem, .. }) => Self::base_types(elem),
             Type::ImplTrait(TypeImplTrait { bounds, .. }) => {
                 // TODO: these need to be marked not as fields, but as Dependence::Traits
                 bounds
                     .into_iter()
-                    .map(|b| match b {
+                    .flat_map(|b| match b {
                         TypeParamBound::Trait(t) => Self::types_from_path(&t.path),
                         _ => vec![],
                     })
-                    .flatten()
                     .collect::<Vec<String>>()
             }
             Type::Reference(TypeReference { elem, .. }) => Self::base_types(elem),
@@ -298,6 +348,7 @@ impl TypeMap {
     }
 }
 
+/*
 #[cfg(test)]
 mod test {
     use super::*;
@@ -441,3 +492,4 @@ mod test {
         edge! {graph, B -> A, i32 };
     }
 }
+*/

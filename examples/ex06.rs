@@ -1,7 +1,5 @@
 type A = String;
-struct B {
-    a: A,
-}
+struct B(A);
 type C<T: D> = String;
 trait D<T: E + F, U: G> {}
 trait E {}
