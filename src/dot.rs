@@ -13,11 +13,17 @@ pub fn generate_dot(typemap: &TypeMap, outfile: Option<&str>) -> String {
             Stmt::Node(Node::new(
                 NodeId(Id::Plain(n.to_string()), None),
                 vec![
-                    Attribute(Id::Plain("shape".into()), Id::Plain("square".into())),
+                    Attribute(Id::Plain("shape".into()), Id::Plain("rect".into())),
                     Attribute(
                         Id::Plain("label".into()),
-                        Id::Plain(format!("{} {}", n.name(), n.dep_type())),
+                        Id::Plain(format!(
+                            "<<font color=\"{}\">{} </font>{}>",
+                            n.color(),
+                            n.dep_type(),
+                            n.name()
+                        )),
                     ),
+                    Attribute(Id::Plain("fontname".into()), Id::Plain("monospace".into())),
                 ],
             ))
         })
@@ -77,9 +83,9 @@ mod test {
     #[test]
     fn test_gen() {
         let tm = TypeMap::build("examples/ex06.rs").unwrap();
-        //let dot = generate_dot(&tm, Some("tmp/test.pdf"));
         let dot = generate_dot(&tm, None);
-        dbg!(&dot);
+        println!("{dot}");
+        generate_dot(&tm, Some("tmp/test.pdf"));
     }
 
     //#[test]

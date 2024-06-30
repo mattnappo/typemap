@@ -1,6 +1,10 @@
 # Typemap
 Visualize dependencies between user-defined types in your Rust projects.
 
+## Demonstration
+
+![demo](./static/demo.png)
+
 ## Usage
 
 ```

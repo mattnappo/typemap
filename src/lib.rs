@@ -64,17 +64,33 @@ impl Dependence {
             Self::Field(_, t) | Self::Trait(_, t) => t.to_ty(),
         }
     }
+    pub fn color(&self) -> String {
+        match self {
+            Dependence::Trait(_, t) | Dependence::Field(_, t) => t.color(),
+        }
+    }
 }
 
 impl DependenceType {
+    pub fn color(&self) -> String {
+        match self {
+            Self::Struct => "red",
+            Self::Enum => "orange",
+            Self::Union => "green",
+            Self::Type => "purple",
+            Self::Trait => "blue",
+            Self::Temp => "white",
+        }
+        .into()
+    }
     pub fn to_ty(&self) -> String {
         match self {
-            Self::Struct => "Struct",
-            Self::Enum => "Enum",
-            Self::Union => "Union",
-            Self::Type => "Type",
-            Self::Trait => "Trait",
-            Self::Temp => "Temp",
+            Self::Struct => "struct",
+            Self::Enum => "enum",
+            Self::Union => "union",
+            Self::Type => "type",
+            Self::Trait => "trait",
+            Self::Temp => "temp",
         }
         .into()
     }
